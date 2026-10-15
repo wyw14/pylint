@@ -1,0 +1,8 @@
+Reusing a ``PyLinter`` instance to check files several times no longer
+accumulates the messages and statistics of previous runs: the score, the
+reports and the exit status now only describe the files and messages of the
+current run.
+
+Pylint now exits with the usage error code (``32``) when every input file was
+ignored or excluded and no file could actually be checked, instead of returning
+``0`` like a successful run without any message.

@@ -34,6 +34,12 @@ def _config_initialization(  # pylint: disable=too-many-statements
     """Parse all available options, read config files and command line arguments and
     set options accordingly.
     """
+    # Configuration parsing itself can emit diagnostics (e.g. bad plugin or
+    # unknown option values) that must be part of this run's statistics and
+    # reports. Reset the per-run state here, before parsing, so the following
+    # check() does not wipe these diagnostics and a reused linter starts every
+    # configured run from a clean slate.
+    linter.prepare_for_run()
     linter.verbose = verbose_mode
     config_file = Path(config_file) if config_file else None
 

@@ -788,6 +788,66 @@ a.py:1:4: E0001: Parsing failed: 'invalid syntax (a, line 1)' (syntax-error)"""
             code=22,
         )
 
+    def test_no_message_all_ignored_and_failure_have_distinct_codes(
+        self, tmp_path: Path
+    ) -> None:
+        """A clean run, a run with only ignored files and a failed run must
+        return distinct exit codes."""
+        clean_file = tmp_path / "clean.py"
+        clean_file.write_text('"""A clean module."""\nGOOD = 1\n', encoding="utf8")
+        ignored_file = tmp_path / "ignored.py"
+        ignored_file.write_text("import os\n", encoding="utf8")
+        missing_file = tmp_path / "missing.py"
+
+        # A file was actually checked and no message was emitted: success.
+        self._runtest([str(clean_file)], code=0)
+
+        # Every input file was ignored, so nothing was actually checked: the
+        # code is the same as for "no files to lint", distinct from success.
+        out = StringIO()
+        code = self._run_pylint(
+            [str(ignored_file), f"--ignore={ignored_file.name}"], out=out
+        )
+        assert code == 32
+        assert "All files were ignored" in out.getvalue()
+
+        # A fatal analysis failure is reported with the fatal bit set and is
+        # distinct both from a clean run and from the all-ignored case.
+        self._runtest([str(missing_file)], code=1)
+
+    def test_all_files_ignored_exit_code_with_jobs(self, tmp_path: Path) -> None:
+        """Ignoring every file must also be detected in parallel mode."""
+        ignored_file = tmp_path / "ignored.py"
+        ignored_file.write_text("import os\n", encoding="utf8")
+        self._runtest(
+            [str(ignored_file), f"--ignore={ignored_file.name}", "--jobs=2"],
+            code=32,
+        )
+
+    def test_fail_under_only_changes_exit_code(self) -> None:
+        """Changing --fail-under only changes the verdict, never the messages
+        or the score that are reported for a given file."""
+        passing_out, failing_out = StringIO(), StringIO()
+        passing_code = self._run_pylint(
+            [
+                "--fail-under",
+                "7.5",
+                join(HERE, "regrtest_data", "fail_under_plus7_5.py"),
+            ],
+            out=passing_out,
+        )
+        failing_code = self._run_pylint(
+            [
+                "--fail-under",
+                "7.6",
+                join(HERE, "regrtest_data", "fail_under_plus7_5.py"),
+            ],
+            out=failing_out,
+        )
+        assert passing_code == 0
+        assert failing_code == 16
+        assert passing_out.getvalue() == failing_out.getvalue()
+
     @pytest.mark.parametrize(
         "fu_score,fo_msgs,fname,out",
         [
@@ -1456,6 +1516,9 @@ a.py:1:4: E0001: Parsing failed: 'invalid syntax (a, line 1)' (syntax-error)"""
     def test_ignore_pattern_from_stdin(self) -> None:
         """Test if linter ignores standard input if the filename matches the ignore pattern."""
         with mock.patch("pylint.lint.pylinter._read_stdin", return_value="import os\n"):
+            # No file is actually checked when the stdin filename is ignored, so
+            # the exit code is the same as for "no files to lint" rather than 0
+            # which is reserved for a successful run without any message.
             self._runtest(
                 [
                     "--from-stdin",
@@ -1464,7 +1527,7 @@ a.py:1:4: E0001: Parsing failed: 'invalid syntax (a, line 1)' (syntax-error)"""
                     "--enable=unused-import",
                     "--ignore-patterns=mymodule.py",
                 ],
-                code=0,
+                code=32,
             )
 
     @pytest.mark.parametrize("ignore_path_value", [".*ignored.*", ".*failing.*"])

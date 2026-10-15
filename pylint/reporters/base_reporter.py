@@ -40,6 +40,15 @@ class BaseReporter:
         """Handle a new message triggered on the current file."""
         self.messages.append(msg)
 
+    def reset(self) -> None:
+        """Reset the reporter to the state it had before a checking run.
+
+        Called by the linter at the beginning of each run so that messages
+        from a previous run are not reported again when the linter and the
+        reporter are reused.
+        """
+        self.messages = []
+
     def writeln(self, string: str = "") -> None:
         """Write a line in the output buffer."""
         try:

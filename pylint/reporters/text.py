@@ -160,6 +160,11 @@ class TextReporter(BaseReporter):
             self._modules.add(msg.module)
         self.write_message(msg)
 
+    def reset(self) -> None:
+        """Reset the reporter and the modules already given a header."""
+        super().reset()
+        self._modules = set()
+
     def _display(self, layout: Section) -> None:
         """Launch layouts display."""
         print(file=self.out)

@@ -251,8 +251,19 @@ group are mutually exclusive.",
                     # We need to make sure we return a failing exit code in this case.
                     # So we use self.linter.msg_status if that is non-zero, otherwise we just return 1.
                     sys.exit(self.linter.msg_status or 1)
-            else:
+            elif self.linter.msg_status:
+                # No score could be computed but the run produced diagnostics
+                # (e.g. syntax errors or fatal analysis failures). The bit
+                # encoded message status reports the kind of failure.
                 sys.exit(self.linter.msg_status)
+            elif not self.linter.stats.modules_names:
+                # No file was actually checked: every input file was ignored
+                # or excluded. This must not be confused with a successful run
+                # without messages, so return a distinct exit code.
+                print("All files were ignored: exiting.")
+                sys.exit(32)
+            else:
+                sys.exit(0)
 
 
 class _PylintConfigRun(Run):

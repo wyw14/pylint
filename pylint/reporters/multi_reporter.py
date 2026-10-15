@@ -81,6 +81,11 @@ class MultiReporter:
             # We provide a copy so reporters can't modify message for others.
             rep.handle_message(copy(msg))
 
+    def reset(self) -> None:
+        """Reset all sub reporters at the beginning of a checking run."""
+        for rep in self._sub_reporters:
+            rep.reset()
+
     def writeln(self, string: str = "") -> None:
         """Write a line in the output buffer."""
         for rep in self._sub_reporters:

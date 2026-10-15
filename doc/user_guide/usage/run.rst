@@ -192,3 +192,9 @@ exit code  meaning
 
 For example, an exit code of ``20`` means there was at least one warning message (4)
 and at least one convention message (16) and nothing else.
+
+Exit code ``0`` is only returned when at least one file was actually checked and no
+message was emitted. When no file could be checked -- either because no file was
+provided or because every input file was ignored or excluded -- pylint exits with
+``32``. This makes a clean run, a run with only ignored files and a failed run
+distinguishable.

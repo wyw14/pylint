@@ -335,6 +335,7 @@ class LinterStats:
         self.warning = 0
 
 
+# pylint: disable-next=too-many-statements
 def merge_stats(stats: list[LinterStats]) -> LinterStats:
     """Used to merge multiple stats objects into a new one when pylint is run in
     parallel mode.
@@ -377,6 +378,8 @@ def merge_stats(stats: list[LinterStats]) -> LinterStats:
                 merged.dependencies[dep_key].update(dep_value)
             except KeyError:
                 merged.dependencies[dep_key] = dep_value
+
+        merged.modules_names.update(stat.modules_names)
 
         merged.duplicated_lines["nb_duplicated_lines"] += stat.duplicated_lines[
             "nb_duplicated_lines"

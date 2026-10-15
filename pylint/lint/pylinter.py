@@ -336,6 +336,14 @@ class PyLinter(
 
         # Attributes related to stats
         self.stats = LinterStats()
+        self._prepared_run = False
+        """Whether the state was reset just before the configuration of the
+        upcoming run was parsed.
+
+        Configuration parsing may already emit messages (and count them in
+        the stats), so the check() call following it must not reset the
+        state a second time.
+        """
 
         # Attributes related to (command-line) options and their parsing
         self.options: Options = options + _make_linter_options(self)
@@ -660,6 +668,34 @@ class PyLinter(
             if not msg.may_be_emitted(self.config.py_version):
                 self._msgs_state[msg.msgid] = False
 
+    def _reset_run_state(self) -> None:
+        """Reset the state describing a single checking run.
+
+        A ``PyLinter`` instance can be reused to lint several sets of files.
+        The statistics, the messages aggregated for the reports and the
+        aggregate exit status must only describe the upcoming run, never
+        files or messages collected during previous runs.
+        """
+        self.stats = LinterStats()
+        self.msg_status = 0
+        self.file_state = FileState("", self.msgs_store, is_base_filestate=True)
+        self.current_name = ""
+        self.current_file = None
+        self.reporter.reset()
+
+    def prepare_for_run(self) -> None:
+        """Reset the run state before the configuration of a run is parsed.
+
+        Parsing the command line and the configuration files can already emit
+        diagnostics (bad plugin values, unknown options, ...) which count
+        towards the stats. Resetting before parsing (instead of in
+        :meth:`check`) keeps these diagnostics part of the run and marks the
+        linter as prepared, so the following :meth:`check` does not reset the
+        state again.
+        """
+        self._reset_run_state()
+        self._prepared_run = True
+
     def _discover_files(self, files_or_modules: Sequence[str]) -> Iterator[str]:
         """Discover python modules and packages in sub-directory.
 
@@ -702,6 +738,16 @@ class PyLinter(
         files_or_modules is either a string or list of strings presenting modules to check.
         """
         self.initialize()
+        # Start every checking run from a clean state so the statistics, the
+        # reports and the exit status only describe this run's files and
+        # messages, even when the linter is reused to check several times.
+        # When the run went through configuration parsing, the state was
+        # already reset before parsing and may since have collected
+        # configuration diagnostics, so don't reset it again in that case.
+        if self._prepared_run:
+            self._prepared_run = False
+        else:
+            self._reset_run_state()
         if self.config.recursive:
             files_or_modules = tuple(self._discover_files(files_or_modules))
         if self.config.from_stdin:
@@ -806,7 +852,6 @@ class PyLinter(
                 continue
             try:
                 self._lint_file(fileitem, module, check_astroid_module)
-                self.stats.modules_names.add(fileitem.filepath)
             except Exception as ex:  # pylint: disable=broad-except
                 template_path = prepare_crash_report(
                     ex, fileitem.filepath, self.crash_file_path
@@ -853,6 +898,11 @@ class PyLinter(
         for msgid, line, args in spurious_messages:
             self.add_message(msgid, line, None, args)
 
+        # Record the file as fully checked (it contributes to the score and to
+        # the reports of this run). Done last so a crash during the checks
+        # above does not mark the module as successfully analyzed.
+        self.stats.modules_names.add(file.filepath)
+
     def _check_file(
         self,
         get_ast: GetAstProtocol,
@@ -894,6 +944,10 @@ class PyLinter(
         )
         for msgid, line, args in spurious_messages:
             self.add_message(msgid, line, None, args)
+        # Record the file as fully checked. In parallel mode the parent linter
+        # merges this stats object, so this is the only place the checked files
+        # are recorded there.
+        self.stats.modules_names.add(file.filepath)
 
     def _get_file_descr_from_stdin(self, filepath: str) -> Iterator[FileItem]:
         """Return file description (tuple of module name, file path, base name) from
