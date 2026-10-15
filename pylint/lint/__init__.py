@@ -18,7 +18,7 @@ Display help messages about given message identifiers and exit.
 import sys
 
 from pylint.config.exceptions import ArgumentPreprocessingError
-from pylint.lint.caching import load_results, save_results
+from pylint.lint.caching import get_cache_key, load_results, save_results
 from pylint.lint.expand_modules import discover_package_path
 from pylint.lint.parallel import check_parallel
 from pylint.lint.pylinter import PyLinter
@@ -38,6 +38,7 @@ __all__ = [
     "augmented_sys_path",
     "check_parallel",
     "discover_package_path",
+    "get_cache_key",
     "load_results",
     "report_messages_by_module_stats",
     "report_messages_stats",

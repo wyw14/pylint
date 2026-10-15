@@ -26,7 +26,7 @@ import astroid.builder
 import astroid.modutils
 from astroid import nodes
 
-from pylint import checkers, exceptions, interfaces, reporters
+from pylint import __version__, checkers, exceptions, interfaces, reporters
 from pylint.checkers.base_checker import BaseChecker
 from pylint.config.arguments_manager import _ArgumentsManager
 from pylint.constants import (
@@ -37,7 +37,7 @@ from pylint.constants import (
 )
 from pylint.interfaces import HIGH
 from pylint.lint.base_options import _make_linter_options
-from pylint.lint.caching import load_results, save_results
+from pylint.lint.caching import get_cache_key, load_results, save_results
 from pylint.lint.expand_modules import (
     _is_ignored_file,
     discover_package_path,
@@ -1145,6 +1145,78 @@ class PyLinter(
             )
         self.stats.reset_message_count()
 
+    def _get_plugins_cache_fingerprint(
+        self,
+    ) -> dict[str, dict[str, Any] | None]:
+        """Fingerprint the loaded plugins.
+
+        A plugin upgrade (new ``__version__`` or modified plugin file) changes
+        the messages pylint can emit and must therefore invalidate the result
+        cache.
+        """
+        fingerprints: dict[str, dict[str, Any] | None] = {}
+        for plugin_name, module in self._dynamic_plugins.items():
+            if isinstance(module, ModuleNotFoundError):
+                # A failed load is stored as the import error.
+                fingerprints[plugin_name] = {"loaded": False}
+                continue
+            if isinstance(module, bool):
+                # In parallel worker processes the modules are replaced by
+                # booleans. Workers never read or write the result cache, only
+                # the loading outcome needs to be represented there.
+                fingerprints[plugin_name] = {"loaded": module}
+                continue
+            info: dict[str, Any] = {"version": getattr(module, "__version__", None)}
+            module_file = getattr(module, "__file__", None)
+            if module_file is not None:
+                # ``__version__`` is not always bumped, so use the plugin file
+                # metadata to detect code changes as well.
+                with contextlib.suppress(OSError):
+                    module_stat = Path(module_file).stat()
+                    info["file"] = module_file
+                    info["mtime_ns"] = module_stat.st_mtime_ns
+                    info["size"] = module_stat.st_size
+            fingerprints[plugin_name] = info
+        return fingerprints
+
+    def _get_result_cache_key(self) -> str:
+        """Return a fingerprint of everything that can change messages/rating.
+
+        This covers the pylint, astroid and interpreter versions, the loaded
+        plugins and every linter/checker option, including the message
+        enable/disable state, ``py-version`` and the ``evaluation`` expression
+        used for the rating.
+        """
+        return get_cache_key(
+            {
+                "versions": {
+                    "pylint": __version__,
+                    "astroid": astroid.__version__,
+                    "python": sys.version_info[:3],
+                },
+                "plugins": self._get_plugins_cache_fingerprint(),
+                "config": vars(self.config),
+            }
+        )
+
+    def _load_previous_results(self) -> LinterStats | None:
+        """Load the results cached by the previous, identically configured, run."""
+        if not self.config.persistent:
+            return None
+        return load_results(
+            self.file_state.base_name, config_hash=self._get_result_cache_key()
+        )
+
+    def _save_results(self) -> None:
+        """Pickle the results of the current run for later comparison."""
+        if not self.config.persistent:
+            return
+        save_results(
+            self.stats,
+            self.file_state.base_name,
+            config_hash=self._get_result_cache_key(),
+        )
+
     def generate_reports(self, verbose: bool = False) -> int | None:
         """Close the whole package /module, it's time to make reports !
 
@@ -1153,29 +1225,31 @@ class PyLinter(
         # Display whatever messages are left on the reporter.
         self.reporter.display_messages(report_nodes.Section())
         if not self.file_state._is_base_filestate:
-            # load previous results if any
-            previous_stats = load_results(self.file_state.base_name)
+            # load previous results if any and the result cache is enabled
+            previous_stats = self._load_previous_results()
             self.reporter.on_close(self.stats, previous_stats)
             if self.config.reports:
                 self.reporter.display_reports(
                     self.make_reports(self.stats, previous_stats)
                 )
 
-            score_value = self._report_evaluation(verbose)
+            score_value = self._report_evaluation(verbose, previous_stats)
             # save results if persistent run
-            if self.config.persistent:
-                save_results(self.stats, self.file_state.base_name)
+            self._save_results()
         else:
             self.reporter.on_close(self.stats, LinterStats())
             score_value = None
         return score_value
 
-    def _report_evaluation(self, verbose: bool = False) -> int | None:
+    def _report_evaluation(
+        self,
+        verbose: bool = False,
+        previous_stats: LinterStats | None = None,
+    ) -> int | None:
         """Make the global evaluation report."""
         # check with at least a statement (usually 0 when there is a
         # syntax error preventing pylint from further processing)
         note = None
-        previous_stats = load_results(self.file_state.base_name)
         if self.stats.statement == 0:
             return note
 
