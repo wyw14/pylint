@@ -49,8 +49,11 @@ class JSONReporter(BaseReporter):
 
     def display_messages(self, layout: Section | None) -> None:
         """Launch layouts display."""
-        json_dumpable = [self.serialize(message) for message in self.messages]
-        print(json.dumps(json_dumpable, indent=4), file=self.out)
+        try:
+            json_dumpable = [self.serialize(message) for message in self.messages]
+            print(json.dumps(json_dumpable, indent=4), file=self.out)
+        except (OSError, UnicodeError, ValueError, TypeError) as ex:
+            self._report_reporter_error(ex)
 
     def display_reports(self, layout: Section) -> None:
         """Don't do anything in this reporter."""
@@ -122,11 +125,14 @@ class JSON2Reporter(BaseReporter):
 
     def display_messages(self, layout: Section | None) -> None:
         """Launch layouts display."""
-        output = {
-            "messages": [self.serialize(message) for message in self.messages],
-            "statistics": self.serialize_stats(),
-        }
-        print(json.dumps(output, indent=4), file=self.out)
+        try:
+            output = {
+                "messages": [self.serialize(message) for message in self.messages],
+                "statistics": self.serialize_stats(),
+            }
+            print(json.dumps(output, indent=4), file=self.out)
+        except (OSError, UnicodeError, ValueError, TypeError) as ex:
+            self._report_reporter_error(ex)
 
     @staticmethod
     def serialize(message: Message) -> JSONMessage:

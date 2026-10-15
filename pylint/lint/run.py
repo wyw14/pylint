@@ -221,15 +221,26 @@ group are mutually exclusive.",
             if linter.config.jobs == 0:
                 linter.config.jobs = _cpu_count()
 
+        # Core diagnostics always run to completion and the exit code is
+        # decided afterwards. A reporter failing to encode, write or format
+        # its output reports its own error and never interrupts the run.
         if self._output:
             try:
-                with open(self._output, "w", encoding="utf-8") as output:
-                    linter.reporter.out = output
-                    linter.check(linter.config.files)
-                    score_value = linter.generate_reports(verbose=self.verbose)
+                output_file = open(self._output, "w", encoding="utf-8")
             except OSError as ex:
                 print(ex, file=sys.stderr)
                 sys.exit(32)
+            linter.reporter.out = output_file
+            try:
+                linter.check(linter.config.files)
+                score_value = linter.generate_reports(verbose=self.verbose)
+            finally:
+                # The file is owned by Run, not by the reporter. Closing may
+                # itself flush, so don't let that failure skip the exit logic.
+                try:
+                    output_file.close()
+                except OSError:
+                    pass
         else:
             linter.check(linter.config.files)
             score_value = linter.generate_reports(verbose=self.verbose)

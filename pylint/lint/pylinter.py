@@ -15,6 +15,7 @@ import traceback
 import warnings
 from collections import defaultdict
 from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
+from copy import copy
 from io import TextIOWrapper
 from pathlib import Path
 from re import Pattern
@@ -451,6 +452,7 @@ class PyLinter(
                         open(reporter_output[0], "w", encoding="utf-8")
                     )
                     reporter.out = output_file
+                    reporter._owns_output = True
                     output_files.append(output_file)
 
             # Extend the lifetime of all opened output files
@@ -1169,6 +1171,33 @@ class PyLinter(
             self.reporter.on_close(self.stats, LinterStats())
             score_value = None
         return score_value
+
+    def re_output(
+        self, reporter: reporters.BaseReporter | reporters.MultiReporter
+    ) -> None:
+        """Re-output the results of the last check with another reporter.
+
+        The checks are not run again and the original message set is not
+        modified: messages are copied before being handed to the new
+        reporter, which also prevents mutations (e.g. colorization) from
+        leaking back into the stored messages.
+        """
+        messages = list(self.reporter.messages)
+        self.set_reporter(reporter)
+        # Feed the collected messages first. Streaming reporters write them
+        # here; aggregating reporters (e.g. JSON) render them below, exactly
+        # as in generate_reports.
+        for message in messages:
+            reporter.handle_message(copy(message))
+        reporter.display_messages(report_nodes.Section())
+        if not self.file_state._is_base_filestate:
+            previous_stats = load_results(self.file_state.base_name)
+            reporter.on_close(self.stats, previous_stats)
+            if self.config.reports:
+                reporter.display_reports(self.make_reports(self.stats, previous_stats))
+            self._report_evaluation()
+        else:
+            reporter.on_close(self.stats, LinterStats())
 
     def _report_evaluation(self, verbose: bool = False) -> int | None:
         """Make the global evaluation report."""

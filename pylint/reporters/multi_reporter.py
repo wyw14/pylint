@@ -77,29 +77,46 @@ class MultiReporter:
 
     def handle_message(self, msg: Message) -> None:
         """Handle a new message triggered on the current file."""
+        # Keep a pristine copy of the message set so the results can be
+        # re-output with another reporter later.
+        self.messages.append(copy(msg))
         for rep in self._sub_reporters:
             # We provide a copy so reporters can't modify message for others.
-            rep.handle_message(copy(msg))
+            self._call_sub_reporter(rep, rep.handle_message, copy(msg))
+
+    @staticmethod
+    def _call_sub_reporter(
+        reporter: BaseReporter, method: Callable[..., None], *args: object
+    ) -> None:
+        """Call a sub-reporter without letting its failures affect the others.
+
+        A failure is recorded on the sub-reporter itself, which reports it
+        exactly once and closes its own resources.
+        """
+        try:
+            method(*args)
+        except Exception as ex:  # pylint: disable=broad-except
+            reporter._report_reporter_error(ex)
 
     def writeln(self, string: str = "") -> None:
         """Write a line in the output buffer."""
         for rep in self._sub_reporters:
-            rep.writeln(string)
+            self._call_sub_reporter(rep, rep.writeln, string)
 
     def display_reports(self, layout: Section) -> None:
         """Display results encapsulated in the layout tree."""
         for rep in self._sub_reporters:
-            rep.display_reports(layout)
+            self._call_sub_reporter(rep, rep.display_reports, layout)
 
     def display_messages(self, layout: Section | None) -> None:
         """Hook for displaying the messages of the reporter."""
         for rep in self._sub_reporters:
-            rep.display_messages(layout)
+            self._call_sub_reporter(rep, rep.display_messages, layout)
 
     def on_set_current_module(self, module: str, filepath: str | None) -> None:
         """Hook called when a module starts to be analysed."""
         for rep in self._sub_reporters:
-            rep.on_set_current_module(module, filepath)
+            self._call_sub_reporter(rep, rep.on_set_current_module, module, filepath)
 
     def on_close(
         self,
@@ -108,4 +125,9 @@ class MultiReporter:
     ) -> None:
         """Hook called when a module finished analyzing."""
         for rep in self._sub_reporters:
-            rep.on_close(stats, previous_stats)
+            self._call_sub_reporter(rep, rep.on_close, stats, previous_stats)
+
+    def disable(self) -> None:
+        """Disable all sub-reporters without reporting an error."""
+        for rep in self._sub_reporters:
+            rep.disable()

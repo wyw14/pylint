@@ -14,6 +14,7 @@ import os
 import re
 import sys
 import warnings
+from copy import copy
 from dataclasses import asdict, fields
 from typing import TYPE_CHECKING, NamedTuple, TextIO
 
@@ -151,10 +152,19 @@ class TextReporter(BaseReporter):
         for key in ("end_line", "end_column"):
             self_dict[key] = self_dict[key] or ""
 
-        self.writeln(self._fixed_template.format(**self_dict))
+        try:
+            formatted = self._fixed_template.format(**self_dict)
+        except (KeyError, IndexError, ValueError) as ex:
+            # A broken --msg-template is a formatting failure of the reporter.
+            self._report_reporter_error(ex)
+            return
+        self.writeln(formatted)
 
     def handle_message(self, msg: Message) -> None:
         """Manage message of different type and in the context of path."""
+        # Store the message before trying to write it: the message set must
+        # stay complete (and be replayable) even if the output fails later.
+        self.messages.append(msg)
         if msg.module not in self._modules:
             self.writeln(make_header(msg))
             self._modules.add(msg.module)
@@ -247,6 +257,9 @@ class ColorizedTextReporter(TextReporter):
         """Manage message of different types, and colorize output
         using ANSI escape codes.
         """
+        # Store an unmodified copy: colorization mutates the message and must
+        # not pollute the reporter's message set.
+        self.messages.append(copy(msg))
         if msg.module not in self._modules:
             msg_style = self._get_decoration("S")
             modsep = colorize_ansi(make_header(msg), msg_style)
@@ -286,7 +299,12 @@ class GithubReporter(TextReporter):
             self_dict[key] = self_dict[key] or ""
 
         self_dict["category"] = self.category_map.get(msg.C) or "error"
-        self.writeln(self._fixed_template.format(**self_dict))
+        try:
+            formatted = self._fixed_template.format(**self_dict)
+        except (KeyError, IndexError, ValueError) as ex:
+            self._report_reporter_error(ex)
+            return
+        self.writeln(formatted)
 
 
 def register(linter: PyLinter) -> None:

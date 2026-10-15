@@ -81,6 +81,11 @@ class MultiReporter(BaseReporter):
         # I don't think fixing the init order in a test class used once is worth it.
         self._reporters = reporters
         self.path_strip_prefix = os.getcwd() + os.sep
+        # Attribute contract of BaseReporter, which this class intentionally
+        # doesn't initialize via super().__init__.
+        self._owns_output = False
+        self._reporter_failed = False
+        self._output_disabled = False
 
     def on_set_current_module(self, module: str, filepath: str | None) -> None:
         for rep in self._reporters:
