@@ -1,0 +1,3 @@
+Recursive package discovery now records the real directories it has already visited and stops at cycles caused by symbolic links or repeated mount points, and no longer checks the same physical file twice. Permission errors, broken symbolic links (or files that vanish during the traversal) and empty directories are now reported separately with the new ``permission-error`` (F0012), ``broken-link`` (F0013) and ``empty-directory`` (F0014) messages, and a failure on one path no longer prevents the other paths from being checked.
+
+Refs #11388

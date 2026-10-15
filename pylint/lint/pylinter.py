@@ -129,6 +129,28 @@ MSGS: dict[str, MessageDefinitionTuple] = {
         "Used when an exception occurred while parsing a pylint configuration file.",
         {"scope": WarningScope.LINE},
     ),
+    "F0012": (
+        "Unable to access %s: %s",
+        "permission-error",
+        "Used when pylint can't read a file or a directory while discovering "
+        "the modules to check, usually because of insufficient permissions.",
+        {"scope": WarningScope.LINE},
+    ),
+    "F0013": (
+        "Skipping %s: %s",
+        "broken-link",
+        "Used when a path encountered while discovering the modules to check "
+        "is a broken symbolic link, or points to a file or directory that "
+        "vanished during the traversal.",
+        {"scope": WarningScope.LINE},
+    ),
+    "F0014": (
+        "Directory %s contains no Python file to check",
+        "empty-directory",
+        "Used when a directory given on the command line exists but does not "
+        "contain any Python module to analyze.",
+        {"scope": WarningScope.LINE},
+    ),
     "I0001": (
         "Unable to run raw checkers on built-in module %s",
         "raw-checker-failed",
@@ -956,7 +978,9 @@ class PyLinter(
             self.set_current_module(modname)
             if key == "fatal":
                 message = str(error["ex"]).replace(os.getcwd() + os.sep, "")
-            self.add_message(key, args=message)
+                self.add_message(key, args=message)
+            else:
+                self.add_message(key, args=error["args"])
         return result
 
     def set_current_module(self, modname: str, filepath: str | None = None) -> None:

@@ -54,11 +54,17 @@ class ModuleDescriptionDict(TypedDict):
 
 
 class ErrorDescriptionDict(TypedDict):
-    """Represents data about errors collected during checking of a module."""
+    """Represents data about errors collected while discovering modules.
 
-    key: Literal["fatal"]
+    ``key`` is the symbol of the message to emit. ``fatal`` carries the
+    formatted message in ``ex``; the other discovery errors pass their
+    message arguments positionally through ``args``.
+    """
+
+    key: Literal["fatal", "permission-error", "broken-link", "empty-directory"]
     mod: str
-    ex: ImportError | SyntaxError
+    ex: ImportError | SyntaxError | OSError | None
+    args: tuple[Any, ...] | None
 
 
 class MessageLocationTuple(NamedTuple):
